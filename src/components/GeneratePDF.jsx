@@ -12,6 +12,8 @@ const GeneratePDF = () => {
         pdf: 0,
         zip: 0
     });
+    const [jobDuration, setJobDuration] = useState(0);
+    const [jobStartTime, setJobStartTime] = useState(null);
 
     const handleUrlChange = (index, value) => {
         const newUrls = [...urls];
@@ -34,10 +36,6 @@ const GeneratePDF = () => {
         setUrls(newUrls);
     };
 
-    const addUrlField = () => {
-        setUrls([...urls, ""]);
-    };
-
     const removeUrlField = (index) => {
         const newUrls = urls.filter((_, i) => i !== index);
         setUrls(newUrls);
@@ -55,6 +53,8 @@ const GeneratePDF = () => {
         e.preventDefault();
         setLoading(true);
         setProgress({ pdf: 0, zip: 0 });
+        setJobStartTime(Date.now());
+        setJobDuration(0);
 
         try {
             const validUrls = urls.filter((url) => url.trim() !== "");
@@ -128,6 +128,10 @@ const GeneratePDF = () => {
                         zip: e.data.progress
                     }));
                 } else if (e.data.type === 'success') {
+                    const endTime = Date.now();
+                    const duration = (endTime - jobStartTime) / 1000; // Convert to seconds
+                    setJobDuration(duration);
+
                     const downloadUrl = window.URL.createObjectURL(e.data.data);
                     const link = document.createElement("a");
                     link.href = downloadUrl;
@@ -269,6 +273,14 @@ const GeneratePDF = () => {
                                 />
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {jobDuration > 0 && !loading && (
+                    <div className="mt-4 p-4 bg-gray-100 rounded">
+                        <p className="text-gray-700">
+                            Total job duration: {jobDuration.toFixed(2)} seconds ({(jobDuration / 60).toFixed(2)} minutes)
+                        </p>
                     </div>
                 )}
             </form>
