@@ -1,0 +1,28 @@
+.pdf-generator {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.pdf-generator input[type="url"] {
+  width: 100%;
+  padding: 8px;
+  margin: 8px 0;
+}
+
+.pdf-generator .options {
+  margin: 20px 0;
+  display: grid;
+  gap: 10px;
+}
+
+.pdf-generator button {
+  padding: 10px 20px;
+  margin: 10px 0;
+  cursor: pointer;
+}
+
+.pdf-generator button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
