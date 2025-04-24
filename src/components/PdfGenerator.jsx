@@ -71,7 +71,7 @@ const PdfGenerator = () => {
             />
           </div>
         ))}
-        
+
         <button type="button" onClick={addUrlField}>
           Add Another URL
         </button>
@@ -80,7 +80,7 @@ const PdfGenerator = () => {
         <div className="options">
           <select
             value={options.format}
-            onChange={(e) => setOptions({...options, format: e.target.value})}
+            onChange={(e) => setOptions({ ...options, format: e.target.value })}
           >
             <option value="A4">A4</option>
             <option value="Letter">Letter</option>
@@ -89,7 +89,7 @@ const PdfGenerator = () => {
 
           <select
             value={options.orientation}
-            onChange={(e) => setOptions({...options, orientation: e.target.value})}
+            onChange={(e) => setOptions({ ...options, orientation: e.target.value })}
           >
             <option value="portrait">Portrait</option>
             <option value="landscape">Landscape</option>
@@ -98,7 +98,7 @@ const PdfGenerator = () => {
           <input
             type="text"
             value={options.border}
-            onChange={(e) => setOptions({...options, border: e.target.value})}
+            onChange={(e) => setOptions({ ...options, border: e.target.value })}
             placeholder="Border (e.g., 10mm)"
           />
         </div>
