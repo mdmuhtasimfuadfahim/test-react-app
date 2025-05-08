@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import { PuppeteerCrawler } from 'crawlee';
+import { zip } from 'zip-a-folder';
+import path from 'path';
+import fs from 'fs';
 
 const PdfGenerator = () => {
   const [fileData, setFileData] = useState([{ fileName: '', pdfHtmlUrl: '' }]);
+  const [jsonInput, setJsonInput] = useState('');
   const [template, setTemplate] = useState({
     templateName: 'salary sheets',
     format: 'A4',
@@ -10,6 +14,7 @@ const PdfGenerator = () => {
     border: '10mm'
   });
   const [loading, setLoading] = useState(false);
+  const [showJsonInput, setShowJsonInput] = useState(false);
 
   // Add new URL input field
   const addUrlField = () => {
@@ -23,6 +28,41 @@ const PdfGenerator = () => {
     setFileData(newFileData);
   };
 
+  // Handle JSON input change
+  const handleJsonInputChange = (e) => {
+    setJsonInput(e.target.value);
+  };
+
+  // Parse JSON input and update fileData
+  const parseJsonInput = () => {
+    try {
+      // Clean up the input by removing extra whitespace and fixing common JSON syntax issues
+      const cleanedInput = jsonInput
+        .replace(/\s+/g, ' ')
+        .replace(/,\s*]/g, ']')
+        .trim();
+
+      const parsedData = JSON.parse(cleanedInput);
+
+      if (Array.isArray(parsedData)) {
+        // Validate each item has the required fields
+        const validData = parsedData.map(item => ({
+          fileName: item.fileName || '',
+          pdfHtmlUrl: item.pdfHtmlUrl ? item.pdfHtmlUrl.trim() : ''
+        }));
+
+        setFileData(validData);
+        setShowJsonInput(false);
+        setJsonInput('');
+      } else {
+        alert('Input must be an array of objects');
+      }
+    } catch (error) {
+      console.error('Error parsing JSON:', error);
+      alert('Invalid JSON format. Please check your input.');
+    }
+  };
+
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,64 +70,91 @@ const PdfGenerator = () => {
 
     try {
       const filteredFileData = fileData.filter(item => item.pdfHtmlUrl.trim() !== '');
+      const tempDir = path.join(process.cwd(), 'temp_pdfs');
 
-      const response = await axios({
-        url: 'http://localhost:8135/api/document/pdf_maker',
-        method: 'POST',
-        responseType: 'blob',
-        data: {
-          fileData: filteredFileData,
-          template
-        }
+      // Create temp directory if it doesn't exist
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir);
+      }
+
+      // Initialize the crawler
+      const crawler = new PuppeteerCrawler({
+        maxConcurrency: 4, // 4 parallel workers
+        async requestHandler({ page, request }) {
+          const { fileName, url } = request.userData;
+
+          // Set page size based on template
+          await page.setViewport({
+            width: template.format === 'A4' ? 794 : 816, // A4 or Letter width in pixels
+            height: template.format === 'A4' ? 1123 : 1056, // A4 or Letter height in pixels
+          });
+
+          // Generate PDF
+          await page.pdf({
+            path: path.join(tempDir, `${fileName}.pdf`),
+            format: template.format,
+            landscape: template.orientation === 'landscape',
+            margin: {
+              top: template.border,
+              right: template.border,
+              bottom: template.border,
+              left: template.border,
+            },
+          });
+        },
       });
 
-      // Get content type from response (case-insensitive)
-      const contentType = response.headers['content-type'] ||
-        response.headers['Content-Type'] ||
-        'application/octet-stream';
+      // Prepare requests for crawler
+      const requests = filteredFileData.map(item => ({
+        url: item.pdfHtmlUrl,
+        userData: {
+          fileName: item.fileName,
+          url: item.pdfHtmlUrl,
+        },
+      }));
 
-      // Get filename from Content-Disposition header (case-insensitive)
-      const contentDisposition = response.headers['content-disposition'] ||
-        response.headers['Content-Disposition'];
+      // Run the crawler
+      await crawler.run(requests);
 
-      let filename = '';
-
-      if (contentDisposition) {
-        // Extract filename from Content-Disposition header with improved regex
-        const matches = /filename=([^;]+)/.exec(contentDisposition);
-        if (matches && matches[1]) {
-          // Remove any quotes around the filename
-          filename = matches[1].replace(/["']/g, '').trim();
-        }
+      // Create zip file if multiple PDFs
+      let downloadFile;
+      if (filteredFileData.length > 1) {
+        const zipPath = path.join(process.cwd(), `${template.templateName}.zip`);
+        await zip(tempDir, zipPath);
+        downloadFile = {
+          path: zipPath,
+          type: 'application/zip',
+          name: `${template.templateName}.zip`
+        };
+      } else {
+        const pdfPath = path.join(tempDir, `${filteredFileData[0].fileName}.pdf`);
+        downloadFile = {
+          path: pdfPath,
+          type: 'application/pdf',
+          name: `${filteredFileData[0].fileName}.pdf`
+        };
       }
-
-      // Fallback filename based on number of files
-      if (!filename) {
-        filename = filteredFileData.length > 1 ? `${template?.templateName}.zip` :
-          (filteredFileData[0]?.fileName || 'document') + '.pdf';
-      }
-
-      // Create blob with correct type
-      const blob = new Blob([response.data], { type: contentType });
 
       // Create download link
+      const blob = new Blob([fs.readFileSync(downloadFile.path)], { type: downloadFile.type });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', filename);
+      link.setAttribute('download', downloadFile.name);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
 
-    } catch (error) {
-      console.error('Error generating document:', error);
-      // Log more details about the error
-      if (error.response) {
-        console.error('Response headers:', error.response.headers);
-        console.error('Response status:', error.response.status);
+      // Clean up temp files
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      if (downloadFile.path.endsWith('.zip')) {
+        fs.unlinkSync(downloadFile.path);
       }
-      alert('Failed to generate document. Please try again.');
+
+    } catch (error) {
+      console.error('Error generating PDFs:', error);
+      alert('Failed to generate PDFs. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -96,30 +163,67 @@ const PdfGenerator = () => {
   return (
     <div className="pdf-generator">
       <h2>PDF Generator</h2>
-      <form onSubmit={handleSubmit}>
-        {/* URL and Filename inputs */}
-        {fileData.map((item, index) => (
-          <div key={index} className="file-input-group">
-            <input
-              type="text"
-              value={item.fileName}
-              onChange={(e) => updateField(index, 'fileName', e.target.value)}
-              placeholder="Enter File Name"
-              required
-            />
-            <input
-              type="url"
-              value={item.pdfHtmlUrl}
-              onChange={(e) => updateField(index, 'pdfHtmlUrl', e.target.value)}
-              placeholder="Enter URL"
-              required
-            />
-          </div>
-        ))}
 
-        <button type="button" onClick={addUrlField}>
-          Add Another URL
+      <div className="input-toggle">
+        <button
+          type="button"
+          onClick={() => setShowJsonInput(!showJsonInput)}
+        >
+          {showJsonInput ? 'Switch to Form Input' : 'Switch to JSON Input'}
         </button>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        {showJsonInput ? (
+          <div className="json-input-container">
+            <textarea
+              value={jsonInput}
+              onChange={handleJsonInputChange}
+              placeholder={`Paste JSON array here, e.g.:
+[
+  {
+    "fileName": "webpage1",
+    "pdfHtmlUrl": "https://www.york.ac.uk/teaching/cws/wws/webpage1.html"
+  },
+  {
+    "fileName": "webpage2",
+    "pdfHtmlUrl": "https://www.york.ac.uk/teaching/cws/wws/webpage2.html"
+  }
+]`}
+              rows={10}
+              style={{ width: '100%' }}
+            />
+            <button type="button" onClick={parseJsonInput}>
+              Parse JSON
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* URL and Filename inputs */}
+            {fileData.map((item, index) => (
+              <div key={index} className="file-input-group">
+                <input
+                  type="text"
+                  value={item.fileName}
+                  onChange={(e) => updateField(index, 'fileName', e.target.value)}
+                  placeholder="Enter File Name"
+                  required
+                />
+                <input
+                  type="url"
+                  value={item.pdfHtmlUrl}
+                  onChange={(e) => updateField(index, 'pdfHtmlUrl', e.target.value)}
+                  placeholder="Enter URL"
+                  required
+                />
+              </div>
+            ))}
+
+            <button type="button" onClick={addUrlField}>
+              Add Another URL
+            </button>
+          </>
+        )}
 
         {/* Template Options */}
         <div className="template-options">

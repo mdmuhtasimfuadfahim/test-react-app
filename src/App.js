@@ -1,11 +1,13 @@
 import React from 'react';
 import './App.css';
-import PdfGenerator from './components/PdfGenerator';
+import PSDGenerator from './components/PSDGenerator';
+import PDFGenerator from './components/backupPdfGenerator';
 
 function App() {
   return (
     <div className="App">
-      <PdfGenerator />
+      <PSDGenerator />
+      <PDFGenerator />
     </div>
   );
 }
